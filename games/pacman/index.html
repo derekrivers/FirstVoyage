@@ -77,6 +77,25 @@
     let score = 0;
     let lives = 3;
 
+    // ─── Pac-Man entity state ─────────────────────────────────────────────────
+    // TUNNEL_ROW is the maze row that has side-to-side tunnel openings (row 11).
+    const TUNNEL_ROW = 11;
+
+    let pacman = {
+      col: 10,            // starting tile column (middle of bottom corridor)
+      row: 20,            // starting tile row
+      dir:  { dc: 0, dr: 0 },  // active direction vector (dc=Δcol, dr=Δrow)
+      next: { dc: 0, dr: 0 },  // queued direction from last key press
+    };
+
+    // Count every pellet present in the map at game start.
+    let pelletsRemaining = 0;
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        if (MAP[r][c] === DOT || MAP[r][c] === POWER) pelletsRemaining++;
+      }
+    }
+
     // ─── Canvas setup ─────────────────────────────────────────────────────────
     const canvas = document.getElementById('gameCanvas');
     canvas.width  = COLS * TILE;
@@ -192,8 +211,120 @@
       drawMaze();
     }
 
-    // ─── Initial render ───────────────────────────────────────────────────────
-    render();
+    // ─── Input handling ─────────────────────────────────────────────────────
+    const ARROW_DIR = {
+      ArrowLeft:  { dc: -1, dr:  0 },
+      ArrowRight: { dc:  1, dr:  0 },
+      ArrowUp:    { dc:  0, dr: -1 },
+      ArrowDown:  { dc:  0, dr:  1 },
+    };
+
+    document.addEventListener('keydown', e => {
+      if (ARROW_DIR[e.key]) {
+        e.preventDefault();
+        pacman.next = ARROW_DIR[e.key];
+      }
+    });
+
+    // ─── Wall & tunnel helpers ─────────────────────────────────────────────────
+    // Returns true when the cell at (col, row) is impassable.
+    // Cells just outside the left/right edge of the tunnel row are open so
+    // Pac-Man can step through before the wrap snaps the coordinate.
+    function isWall(col, row) {
+      if (row === TUNNEL_ROW && (col < 0 || col >= COLS)) return false;
+      if (col < 0 || col >= COLS || row < 0 || row >= ROWS) return true;
+      return MAP[row][col] === WALL;
+    }
+
+    // Wraps col back into bounds when Pac-Man exits the tunnel on row 11.
+    function wrapTunnel(col, row) {
+      if (row === TUNNEL_ROW) {
+        if (col < 0)     return { col: COLS - 1, row };
+        if (col >= COLS) return { col: 0, row };
+      }
+      return { col, row };
+    }
+
+    // ─── Pellet consumption ────────────────────────────────────────────────────
+    function consumePellet(col, row) {
+      const tile = MAP[row][col];
+      if (tile === DOT) {
+        MAP[row][col] = EMPTY;
+        score += 10;
+        pelletsRemaining--;
+      } else if (tile === POWER) {
+        MAP[row][col] = EMPTY;
+        score += 50;
+        pelletsRemaining--;
+      }
+    }
+
+    // ─── Pac-Man movement tick ────────────────────────────────────────────────
+    // Called once per movement tick.  Tries the queued direction first;
+    // if that is blocked it falls back to the current direction.
+    function updatePacman() {
+      // Promote queued direction when it does not point into a wall.
+      const { dc: ndc, dr: ndr } = pacman.next;
+      if (ndc !== 0 || ndr !== 0) {
+        const wn = wrapTunnel(pacman.col + ndc, pacman.row + ndr);
+        if (!isWall(wn.col, wn.row)) {
+          pacman.dir = { dc: ndc, dr: ndr };
+        }
+      }
+
+      // Apply current direction.
+      const { dc, dr } = pacman.dir;
+      if (dc === 0 && dr === 0) return; // waiting for first key press
+
+      const dest = wrapTunnel(pacman.col + dc, pacman.row + dr);
+      if (!isWall(dest.col, dest.row)) {
+        pacman.col = dest.col;
+        pacman.row = dest.row;
+        consumePellet(pacman.col, pacman.row);
+      }
+    }
+
+    // ─── Draw Pac-Man ─────────────────────────────────────────────────────────
+    function drawPacman() {
+      const cx = pacman.col * TILE + TILE / 2;
+      const cy = HUD_H + pacman.row * TILE + TILE / 2;
+      const pr = TILE / 2 - 2;
+      const mouth = 0.22 * Math.PI; // half-angle of open mouth
+
+      // Arc start/end depend on facing direction (angle 0 = right, clockwise).
+      let start, end;
+      const { dc, dr } = pacman.dir;
+      if      (dc ===  1 && dr ===  0) { start = mouth;                  end = 2 * Math.PI - mouth; }
+      else if (dc === -1 && dr ===  0) { start = Math.PI + mouth;        end = Math.PI - mouth; }
+      else if (dc ===  0 && dr === -1) { start = 1.5 * Math.PI + mouth;  end = 1.5 * Math.PI - mouth; }
+      else if (dc ===  0 && dr ===  1) { start = 0.5 * Math.PI + mouth;  end = 0.5 * Math.PI - mouth; }
+      else                             { start = mouth;                  end = 2 * Math.PI - mouth; }
+
+      ctx.fillStyle = '#ffff00';
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.arc(cx, cy, pr, start, end);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    // ─── Game loop ────────────────────────────────────────────────────────────
+    const TICK_MS = 175; // ms between movement steps
+    let lastTick  = 0;
+
+    function gameLoop(ts) {
+      if (ts - lastTick >= TICK_MS) {
+        lastTick = ts;
+        updatePacman();
+      }
+      drawHUD();
+      drawMaze();
+      drawPacman();
+      requestAnimationFrame(gameLoop);
+    }
+
+    // ─── Start ────────────────────────────────────────────────────────────────
+    requestAnimationFrame(gameLoop);
   </script>
 </body>
 </html>
