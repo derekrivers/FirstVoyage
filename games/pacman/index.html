@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pac-Man</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #000;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+    }
+    h1 {
+      color: #ffff00;
+      font-size: 28px;
+      letter-spacing: 6px;
+      font-family: monospace;
+      text-shadow: 0 0 12px #ffff00;
+      margin-bottom: 10px;
+    }
+    canvas {
+      display: block;
+      border: 3px solid #1a1aff;
+      box-shadow: 0 0 20px #1a1aff44;
+    }
+  </style>
+</head>
+<body>
+  <h1>PAC-MAN</h1>
+  <canvas id="gameCanvas"></canvas>
+
+  <script>
+    // ─── Tile constants ───────────────────────────────────────────────────────
+    const WALL  = 0; // solid wall
+    const EMPTY = 1; // open corridor (no pellet)
+    const DOT   = 2; // standard pellet
+    const POWER = 3; // power pellet  (exactly 4 in the map)
+
+    // ─── Tile map  (21 cols × 23 rows) ───────────────────────────────────────
+    // Power pellets: [3][1], [3][19], [18][1], [18][19]
+    const MAP = [
+      /* 00 */ [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      /* 01 */ [0,2,2,2,2,2,2,2,2,2,0,2,2,2,2,2,2,2,2,2,0],
+      /* 02 */ [0,2,0,0,2,0,0,0,2,0,0,0,2,0,0,0,2,0,0,2,0],
+      /* 03 */ [0,3,0,0,2,0,0,0,2,0,0,0,2,0,0,0,2,0,0,3,0],
+      /* 04 */ [0,2,0,0,2,2,2,2,2,2,2,2,2,2,2,2,2,0,0,2,0],
+      /* 05 */ [0,2,0,0,0,0,2,0,0,0,0,0,0,0,2,0,0,0,0,2,0],
+      /* 06 */ [0,2,2,2,2,2,2,0,0,0,0,0,0,0,2,2,2,2,2,2,0],
+      /* 07 */ [0,0,0,0,2,0,0,0,0,0,0,0,0,0,0,0,2,0,0,0,0],
+      /* 08 */ [0,0,0,0,2,0,0,0,0,0,0,0,0,0,0,0,2,0,0,0,0],
+      /* 09 */ [0,0,0,0,2,0,0,1,1,1,1,1,1,0,0,0,2,0,0,0,0],
+      /* 10 */ [0,0,0,0,2,0,0,1,0,0,1,0,1,0,0,0,2,0,0,0,0],
+      /* 11 */ [1,1,1,1,2,0,0,1,0,1,1,0,1,0,0,0,2,1,1,1,1],
+      /* 12 */ [0,0,0,0,2,0,0,1,0,0,0,0,1,0,0,0,2,0,0,0,0],
+      /* 13 */ [0,0,0,0,2,0,0,1,1,1,1,1,1,0,0,0,2,0,0,0,0],
+      /* 14 */ [0,0,0,0,2,0,0,0,0,0,0,0,0,0,0,0,2,0,0,0,0],
+      /* 15 */ [0,0,0,0,2,0,0,0,0,0,0,0,0,0,0,0,2,0,0,0,0],
+      /* 16 */ [0,2,2,2,2,2,2,2,2,2,0,2,2,2,2,2,2,2,2,2,0],
+      /* 17 */ [0,2,0,0,2,0,0,0,0,0,0,0,0,0,0,0,2,0,0,2,0],
+      /* 18 */ [0,3,2,0,2,2,2,2,2,2,0,2,2,2,2,2,2,0,2,3,0],
+      /* 19 */ [0,0,2,0,0,0,2,0,0,0,0,0,0,0,2,0,0,0,2,0,0],
+      /* 20 */ [0,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,0],
+      /* 21 */ [0,2,0,0,0,0,2,0,0,2,0,2,0,0,2,0,0,0,0,2,0],
+      /* 22 */ [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    ];
+
+    const ROWS      = MAP.length;      // 23
+    const COLS      = MAP[0].length;   // 21
+    const TILE      = 20;              // px per tile
+    const HUD_H     = 44;              // px reserved for HUD at top
+
+    // ─── Game state ───────────────────────────────────────────────────────────
+    let score = 0;
+    let lives = 3;
+
+    // ─── Canvas setup ─────────────────────────────────────────────────────────
+    const canvas = document.getElementById('gameCanvas');
+    canvas.width  = COLS * TILE;
+    canvas.height = ROWS * TILE + HUD_H;
+    const ctx = canvas.getContext('2d');
+
+    // SCAFFOLD — draw functions follow in next pass
+    // ─── Draw helpers ─────────────────────────────────────────────────────────
+
+    function drawHUD() {
+      // Background bar
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, canvas.width, HUD_H);
+
+      // Score
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 14px monospace';
+      ctx.textBaseline = 'middle';
+      ctx.textAlign = 'left';
+      ctx.fillText('SCORE', 10, HUD_H * 0.30);
+      ctx.fillStyle = '#ffff00';
+      ctx.font = 'bold 18px monospace';
+      ctx.fillText(String(score).padStart(5, '0'), 10, HUD_H * 0.72);
+
+      // Lives (heart symbols)
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 14px monospace';
+      ctx.textAlign = 'right';
+      ctx.fillText('LIVES', canvas.width - 10, HUD_H * 0.30);
+      ctx.fillStyle = '#ff4444';
+      ctx.font = '18px monospace';
+      const hearts = '♥ '.repeat(lives).trim();
+      ctx.fillText(hearts, canvas.width - 10, HUD_H * 0.72);
+
+      // Divider line
+      ctx.strokeStyle = '#1a1aff';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(0, HUD_H - 1);
+      ctx.lineTo(canvas.width, HUD_H - 1);
+      ctx.stroke();
+    }
+
+    function drawWall(col, row) {
+      const x = col * TILE;
+      const y = HUD_H + row * TILE;
+      ctx.fillStyle = '#0000cc';
+      ctx.fillRect(x, y, TILE, TILE);
+      // Inner highlight to give a 3-D panel feel
+      ctx.strokeStyle = '#3333ff';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(x + 1.5, y + 1.5, TILE - 3, TILE - 3);
+    }
+
+    function drawPellet(col, row) {
+      const cx = col * TILE + TILE / 2;
+      const cy = HUD_H + row * TILE + TILE / 2;
+      ctx.fillStyle = '#ffddaa';
+      ctx.beginPath();
+      ctx.arc(cx, cy, 3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    function drawPowerPellet(col, row) {
+      const cx = col * TILE + TILE / 2;
+      const cy = HUD_H + row * TILE + TILE / 2;
+      // Outer glow
+      const grad = ctx.createRadialGradient(cx, cy, 1, cx, cy, 8);
+      grad.addColorStop(0, '#ffffff');
+      grad.addColorStop(0.5, '#ffff44');
+      grad.addColorStop(1, 'transparent');
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(cx, cy, 8, 0, Math.PI * 2);
+      ctx.fill();
+      // Core
+      ctx.fillStyle = '#ffff00';
+      ctx.beginPath();
+      ctx.arc(cx, cy, 6, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    function drawTunnel(col, row) {
+      // Tunnel cells (EMPTY on edge rows) are just dark passage openings
+      const x = col * TILE;
+      const y = HUD_H + row * TILE;
+      ctx.fillStyle = '#111';
+      ctx.fillRect(x, y, TILE, TILE);
+    }
+
+    function drawMaze() {
+      // Clear play field
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, HUD_H, canvas.width, ROWS * TILE);
+
+      for (let r = 0; r < ROWS; r++) {
+        for (let c = 0; c < COLS; c++) {
+          const tile = MAP[r][c];
+          if (tile === WALL)  { drawWall(c, r); }
+          else if (tile === DOT)   { drawPellet(c, r); }
+          else if (tile === POWER) { drawPowerPellet(c, r); }
+          else if (tile === EMPTY) {
+            // Edge tunnel openings get a subtle treatment
+            if (c === 0 || c === COLS - 1) { drawTunnel(c, r); }
+            // else: just black (already cleared)
+          }
+        }
+      }
+    }
+
+    function render() {
+      drawHUD();
+      drawMaze();
+    }
+
+    // ─── Initial render ───────────────────────────────────────────────────────
+    render();
+  </script>
+</body>
+</html>
