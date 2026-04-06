@@ -115,6 +115,16 @@
     // Elapsed game seconds (updated in gameLoop)
     let gameElapsed = 0;
 
+    // ─── Ghost mode cycle state ───────────────────────────────────────────────
+    // Phases alternate: scatter(7s) → chase(20s) → scatter(7s) → ...
+    const MODE_PHASES = [
+      { mode: 'scatter', duration: 7  },
+      { mode: 'chase',   duration: 20 },
+    ];
+    let modeCycleIndex   = 0;   // index into MODE_PHASES (cycles 0→1→0→1…)
+    let modePhaseStart   = 0;   // gameElapsed value when current phase began
+    let modeReversed     = false; // did we already reverse in this phase?
+
     // ─── Canvas setup ─────────────────────────────────────────────────────────
     const canvas = document.getElementById('gameCanvas');
     canvas.width  = COLS * TILE;
@@ -404,7 +414,98 @@
       ghost.dir = { dc: 0, dr:-1 }; // initial scatter direction: up
     }
 
+    // ─── Chase target helpers ─────────────────────────────────────────────────
+
+    // Clamp a tile coordinate to valid maze bounds.
+    function clampTile(col, row) {
+      return {
+        col: Math.max(0, Math.min(COLS - 1, col)),
+        row: Math.max(0, Math.min(ROWS - 1, row)),
+      };
+    }
+
+    // Returns N tiles ahead of Pac-Man in his current direction.
+    function tilesAheadOfPacman(n) {
+      return clampTile(
+        pacman.col + pacman.dir.dc * n,
+        pacman.row + pacman.dir.dr * n
+      );
+    }
+
+    // Compute the chase target tile for a given ghost.
+    function getChaseTarget(ghost) {
+      switch (ghost.name) {
+        case 'Blinky': {
+          // Target Pac-Man's current tile directly.
+          return { col: pacman.col, row: pacman.row };
+        }
+        case 'Pinky': {
+          // Target 4 tiles ahead of Pac-Man.
+          return tilesAheadOfPacman(4);
+        }
+        case 'Inky': {
+          // Pivot = 2 tiles ahead of Pac-Man.
+          // Blinky = ghosts[0]
+          const pivot  = tilesAheadOfPacman(2);
+          const blinky = ghosts[0];
+          return clampTile(
+            pivot.col + (pivot.col - blinky.col),
+            pivot.row + (pivot.row - blinky.row)
+          );
+        }
+        case 'Clyde': {
+          // Chase Pac-Man when farther than 8 tiles; otherwise retreat to scatter corner.
+          const dist = euclidean(ghost.col, ghost.row, pacman.col, pacman.row);
+          if (dist > 8) return { col: pacman.col, row: pacman.row };
+          return ghost.scatterTarget;
+        }
+        default:
+          return ghost.scatterTarget;
+      }
+    }
+
+    // ─── Ghost mode cycle management ─────────────────────────────────────────
+
+    // Reverse every active (non-pen, non-exiting) ghost once.
+    function reverseActiveGhosts() {
+      for (const g of ghosts) {
+        if (g.mode !== 'pen' && g.mode !== 'exiting') {
+          g.dir = { dc: -g.dir.dc, dr: -g.dir.dr };
+        }
+      }
+    }
+
+    function updateGhostModeCycle() {
+      const currentPhase = MODE_PHASES[modeCycleIndex];
+      const elapsed      = gameElapsed - modePhaseStart;
+
+      if (elapsed >= currentPhase.duration) {
+        // Advance to the next phase (wrap around between 0 and 1).
+        modeCycleIndex = (modeCycleIndex + 1) % MODE_PHASES.length;
+        modePhaseStart = gameElapsed;
+        modeReversed   = false;
+
+        // Update all active ghosts to the new mode.
+        const newMode = MODE_PHASES[modeCycleIndex].mode;
+        for (const g of ghosts) {
+          if (g.mode !== 'pen' && g.mode !== 'exiting') {
+            g.mode = newMode;
+          }
+        }
+      }
+
+      // Reverse direction exactly once at the start of the new phase.
+      if (!modeReversed) {
+        reverseActiveGhosts();
+        modeReversed = true;
+      }
+    }
+
     function updateGhosts() {
+      // Drive the global scatter/chase cycle (only once ghosts are out).
+      const anyActive = ghosts.some(g => g.mode === 'scatter' || g.mode === 'chase');
+      if (anyActive) updateGhostModeCycle();
+
       for (const g of ghosts) {
         if (g.mode === 'pen') {
           if (gameElapsed >= g.releaseTime) {
@@ -415,11 +516,20 @@
 
         if (g.mode === 'exiting') {
           ghostExitPen(g);
+          // When the ghost exits it enters 'scatter'; sync its mode with the
+          // current global phase so it doesn't lag behind.
+          if (g.mode === 'scatter') {
+            g.mode = MODE_PHASES[modeCycleIndex].mode;
+          }
           continue;
         }
 
-        // scatter mode — target the ghost's fixed corner
-        ghostAIMove(g, g.scatterTarget.col, g.scatterTarget.row);
+        if (g.mode === 'scatter') {
+          ghostAIMove(g, g.scatterTarget.col, g.scatterTarget.row);
+        } else if (g.mode === 'chase') {
+          const target = getChaseTarget(g);
+          ghostAIMove(g, target.col, target.row);
+        }
       }
     }
 
