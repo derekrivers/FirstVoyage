@@ -96,6 +96,25 @@
       }
     }
 
+    // ─── Ghost entities ───────────────────────────────────────────────────
+    const DOOR_ROW = 9;   // row just above pen where ghosts exit
+    const DOOR_COL = 10;  // centre column of the pen door
+
+    // Ghost starting positions (inside or just-above the pen)
+    const ghosts = [
+      { name:'Blinky', color:'#ff0000', col:10, row:9,  dir:{dc:0,dr:0}, mode:'scatter', releaseTime:0,
+        scatterTarget:{col:COLS-2, row:1} },
+      { name:'Pinky',  color:'#ffb8ff', col:10, row:11, dir:{dc:0,dr:0}, mode:'pen',     releaseTime:3,
+        scatterTarget:{col:1, row:1} },
+      { name:'Inky',   color:'#00ffff', col:9,  row:11, dir:{dc:0,dr:0}, mode:'pen',     releaseTime:6,
+        scatterTarget:{col:COLS-2, row:ROWS-2} },
+      { name:'Clyde',  color:'#ffb852', col:10, row:13, dir:{dc:0,dr:0}, mode:'pen',     releaseTime:9,
+        scatterTarget:{col:1, row:ROWS-2} },
+    ];
+
+    // Elapsed game seconds (updated in gameLoop)
+    let gameElapsed = 0;
+
     // ─── Canvas setup ─────────────────────────────────────────────────────────
     const canvas = document.getElementById('gameCanvas');
     canvas.width  = COLS * TILE;
@@ -284,6 +303,126 @@
       }
     }
 
+    // ─── Ghost movement ───────────────────────────────────────────────────
+    // Ghosts in the pen are allowed to walk on pen-interior tiles
+    // even though isWall() would block them for Pac-Man.
+    function isGhostWall(col, row, ghost) {
+      // Tunnel row edge exception (same as isWall)
+      if (row === TUNNEL_ROW && (col < 0 || col >= COLS)) return false;
+      if (col < 0 || col >= COLS || row < 0 || row >= ROWS) return true;
+      return MAP[row][col] === WALL;
+    }
+
+    function euclidean(c1, r1, c2, r2) {
+      return Math.sqrt((c1 - c2) ** 2 + (r1 - r2) ** 2);
+    }
+
+    // Returns true if (dc2,dr2) is the exact reverse of (dc1,dr1).
+    function isReverse(dc1, dr1, dc2, dr2) {
+      return dc1 === -dc2 && dr1 === -dr2;
+    }
+
+    const DIRS = [
+      { dc: 0, dr:-1 }, // up
+      { dc:-1, dr: 0 }, // left
+      { dc: 0, dr: 1 }, // down
+      { dc: 1, dr: 0 }, // right
+    ];
+
+    // Standard ghost AI move: pick the exit from the current tile that
+    // minimises Euclidean distance to the target tile.  No reversals.
+    function ghostAIMove(ghost, targetCol, targetRow) {
+      let bestDir = null;
+      let bestDist = Infinity;
+
+      for (const d of DIRS) {
+        // No reversals
+        if (isReverse(ghost.dir.dc, ghost.dir.dr, d.dc, d.dr)) continue;
+
+        const nc = ghost.col + d.dc;
+        const nr = ghost.row + d.dr;
+        const w = wrapTunnel(nc, nr);
+
+        if (isGhostWall(w.col, w.row, ghost)) continue;
+
+        const dist = euclidean(w.col, w.row, targetCol, targetRow);
+        if (dist < bestDist) {
+          bestDist = dist;
+          bestDir = d;
+        }
+      }
+
+      // If no forward exit (dead end), allow reversal as fallback
+      if (!bestDir) {
+        for (const d of DIRS) {
+          const nc = ghost.col + d.dc;
+          const nr = ghost.row + d.dr;
+          const w = wrapTunnel(nc, nr);
+          if (!isGhostWall(w.col, w.row, ghost)) {
+            bestDir = d;
+            break;
+          }
+        }
+      }
+
+      if (bestDir) {
+        ghost.dir = { dc: bestDir.dc, dr: bestDir.dr };
+        const dest = wrapTunnel(ghost.col + bestDir.dc, ghost.row + bestDir.dr);
+        ghost.col = dest.col;
+        ghost.row = dest.row;
+      }
+    }
+
+    // Corridor entry points just outside the pen that connect to the main maze.
+    // Col 4 and col 16 are the two vertical corridors flanking the pen.
+    const PEN_EXIT_COL = 4;
+    const PEN_EXIT_ROW = 9;
+
+    // Move a ghost that is exiting the pen: head to the door then
+    // teleport to the nearest corridor entry and start scattering.
+    function ghostExitPen(ghost) {
+      // Step 1: align column to DOOR_COL inside the pen
+      if (ghost.col < DOOR_COL) {
+        ghost.dir = { dc: 1, dr: 0 };
+        ghost.col++;
+        return;
+      } else if (ghost.col > DOOR_COL) {
+        ghost.dir = { dc:-1, dr: 0 };
+        ghost.col--;
+        return;
+      }
+      // Step 2: move up toward DOOR_ROW
+      if (ghost.row > DOOR_ROW) {
+        ghost.dir = { dc: 0, dr:-1 };
+        ghost.row--;
+        return;
+      }
+      // Arrived at door — warp to corridor entry and start scattering.
+      ghost.col = PEN_EXIT_COL;
+      ghost.row = PEN_EXIT_ROW;
+      ghost.mode = 'scatter';
+      ghost.dir = { dc: 0, dr:-1 }; // initial scatter direction: up
+    }
+
+    function updateGhosts() {
+      for (const g of ghosts) {
+        if (g.mode === 'pen') {
+          if (gameElapsed >= g.releaseTime) {
+            g.mode = 'exiting';
+          }
+          continue; // stay put while in pen
+        }
+
+        if (g.mode === 'exiting') {
+          ghostExitPen(g);
+          continue;
+        }
+
+        // scatter mode — target the ghost's fixed corner
+        ghostAIMove(g, g.scatterTarget.col, g.scatterTarget.row);
+      }
+    }
+
     // ─── Draw Pac-Man ─────────────────────────────────────────────────────────
     function drawPacman() {
       const cx = pacman.col * TILE + TILE / 2;
@@ -308,17 +447,77 @@
       ctx.fill();
     }
 
+    // ─── Draw Ghosts ─────────────────────────────────────────────────────
+    function drawGhost(ghost) {
+      const cx = ghost.col * TILE + TILE / 2;
+      const cy = HUD_H + ghost.row * TILE + TILE / 2;
+      const r = TILE / 2 - 1;
+
+      // Body: rounded top, wavy bottom
+      ctx.fillStyle = ghost.color;
+      ctx.beginPath();
+      ctx.arc(cx, cy - 2, r, Math.PI, 0, false); // dome
+      ctx.lineTo(cx + r, cy + r - 2);
+      // Wavy skirt (3 bumps)
+      const skirtY = cy + r - 2;
+      const bumpW = (2 * r) / 3;
+      for (let i = 0; i < 3; i++) {
+        const bx = cx + r - i * bumpW;
+        ctx.quadraticCurveTo(bx - bumpW * 0.25, skirtY + 4, bx - bumpW * 0.5, skirtY);
+        ctx.quadraticCurveTo(bx - bumpW * 0.75, skirtY - 3, bx - bumpW, skirtY);
+      }
+      ctx.closePath();
+      ctx.fill();
+
+      // Eyes
+      const eyeOffX = r * 0.30;
+      const eyeR = r * 0.28;
+      const pupilR = eyeR * 0.50;
+
+      // Pupil offset based on direction
+      let pdx = 0, pdy = 0;
+      if (ghost.dir.dc === -1) pdx = -pupilR * 0.7;
+      if (ghost.dir.dc ===  1) pdx =  pupilR * 0.7;
+      if (ghost.dir.dr === -1) pdy = -pupilR * 0.7;
+      if (ghost.dir.dr ===  1) pdy =  pupilR * 0.7;
+
+      for (const side of [-1, 1]) {
+        const ex = cx + side * eyeOffX;
+        const ey = cy - 3;
+        // Sclera (white)
+        ctx.fillStyle = '#fff';
+        ctx.beginPath();
+        ctx.arc(ex, ey, eyeR, 0, Math.PI * 2);
+        ctx.fill();
+        // Pupil (blue)
+        ctx.fillStyle = '#00f';
+        ctx.beginPath();
+        ctx.arc(ex + pdx, ey + pdy, pupilR, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    function drawGhosts() {
+      for (const g of ghosts) drawGhost(g);
+    }
+
     // ─── Game loop ────────────────────────────────────────────────────────────
     const TICK_MS = 175; // ms between movement steps
     let lastTick  = 0;
+    let gameStartTime = 0;
 
     function gameLoop(ts) {
+      if (gameStartTime === 0) gameStartTime = ts;
+      gameElapsed = (ts - gameStartTime) / 1000;
+
       if (ts - lastTick >= TICK_MS) {
         lastTick = ts;
         updatePacman();
+        updateGhosts();
       }
       drawHUD();
       drawMaze();
+      drawGhosts();   // after maze, before HUD overlay pass
       drawPacman();
       requestAnimationFrame(gameLoop);
     }
