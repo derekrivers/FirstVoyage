@@ -1,639 +1,820 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Pac-Man</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FirstVoyage Pac-Man</title>
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
+    :root {
+      color-scheme: dark;
+      --bg: #000;
+      --panel: #050816;
+      --line: #1d38ff;
+      --dot: #ffd9a0;
+      --power: #fff67a;
+      --pac: #ffe600;
+      --text: #f8f8f8;
+      --muted: #9fb0ff;
+      --danger: #ff5577;
+      --success: #7dff95;
+      font-family: "Trebuchet MS", Verdana, sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+
     body {
-      background: #000;
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-      align-items: center;
+      margin: 0;
       min-height: 100vh;
+      display: grid;
+      place-items: center;
+      background:
+        radial-gradient(circle at top, #08103a 0%, #02030b 35%, #000 100%);
+      color: var(--text);
     }
-    h1 {
-      color: #ffff00;
-      font-size: 28px;
-      letter-spacing: 6px;
-      font-family: monospace;
-      text-shadow: 0 0 12px #ffff00;
-      margin-bottom: 10px;
+
+    .game-shell {
+      width: min(96vw, 620px);
+      padding: 20px;
+      border: 2px solid #1a2cff;
+      border-radius: 18px;
+      background: rgba(2, 6, 24, 0.92);
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.55), 0 0 36px rgba(37, 68, 255, 0.25);
     }
+
+    .title {
+      margin: 0 0 12px;
+      text-align: center;
+      font-size: clamp(1.8rem, 4vw, 2.6rem);
+      letter-spacing: 0.35rem;
+      color: var(--pac);
+      text-shadow: 0 0 16px rgba(255, 230, 0, 0.35);
+    }
+
+    .hud {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+
+    .stat {
+      padding: 10px 12px;
+      border: 1px solid rgba(100, 124, 255, 0.35);
+      border-radius: 12px;
+      background: rgba(10, 16, 42, 0.9);
+    }
+
+    .stat-label {
+      display: block;
+      margin-bottom: 4px;
+      font-size: 0.75rem;
+      letter-spacing: 0.08rem;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .stat-value {
+      font-size: 1.15rem;
+      font-weight: 700;
+    }
+
+    .canvas-wrap {
+      position: relative;
+      border-radius: 16px;
+      overflow: hidden;
+      border: 3px solid var(--line);
+      background: #000;
+    }
+
     canvas {
       display: block;
-      border: 3px solid #1a1aff;
-      box-shadow: 0 0 20px #1a1aff44;
+      width: 100%;
+      height: auto;
+      image-rendering: pixelated;
+      background: #000;
+    }
+
+    .overlay {
+      position: absolute;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0, 0, 0, 0.72);
+      padding: 18px;
+      text-align: center;
+    }
+
+    .overlay.visible { display: flex; }
+
+    .overlay-card {
+      width: min(100%, 360px);
+      padding: 24px 22px;
+      border-radius: 18px;
+      border: 2px solid rgba(255, 255, 255, 0.15);
+      background: rgba(8, 12, 28, 0.95);
+      box-shadow: 0 12px 36px rgba(0, 0, 0, 0.45);
+    }
+
+    .overlay-card h2 {
+      margin: 0 0 10px;
+      font-size: 1.9rem;
+      letter-spacing: 0.08rem;
+    }
+
+    .overlay-card p {
+      margin: 0 0 14px;
+      color: #d9ddff;
+      line-height: 1.5;
+    }
+
+    .overlay-card button {
+      cursor: pointer;
+      border: none;
+      border-radius: 999px;
+      padding: 12px 18px;
+      font: inherit;
+      font-weight: 700;
+      color: #071126;
+      background: linear-gradient(180deg, #fff278, #ffd400);
+    }
+
+    .help {
+      margin: 14px 4px 0;
+      color: #cdd4ff;
+      font-size: 0.95rem;
+      line-height: 1.5;
+      text-align: center;
     }
   </style>
 </head>
 <body>
-  <h1>PAC-MAN</h1>
-  <canvas id="gameCanvas"></canvas>
+  <main class="game-shell">
+    <h1 class="title">PAC-MAN</h1>
+
+    <section class="hud" aria-label="Game status">
+      <div class="stat"><span class="stat-label">Score</span><span class="stat-value" id="scoreValue">0</span></div>
+      <div class="stat"><span class="stat-label">Lives</span><span class="stat-value" id="livesValue">3</span></div>
+      <div class="stat"><span class="stat-label">Pellets</span><span class="stat-value" id="pelletsValue">0</span></div>
+      <div class="stat"><span class="stat-label">Mode</span><span class="stat-value" id="modeValue">Ready</span></div>
+    </section>
+
+    <div class="canvas-wrap">
+      <canvas id="gameCanvas" width="504" height="600" aria-label="Pac-Man game board"></canvas>
+      <div class="overlay visible" id="overlay" aria-live="polite">
+        <div class="overlay-card">
+          <h2 id="overlayTitle">Ready?</h2>
+          <p id="overlayMessage">Use the arrow keys to collect every pellet, dodge ghosts, and eat frightened ghosts after a power pellet.</p>
+          <button id="overlayButton" type="button">Start Game</button>
+        </div>
+      </div>
+    </div>
+
+    <p class="help">Arrow keys move Pac-Man. Use the side tunnel to wrap across the maze. Press Enter or Space on any end screen to restart.</p>
+  </main>
 
   <script>
-    // ─── Tile constants ───────────────────────────────────────────────────────
-    const WALL  = 0; // solid wall
-    const EMPTY = 1; // open corridor (no pellet)
-    const DOT   = 2; // standard pellet
-    const POWER = 3; // power pellet  (exactly 4 in the map)
+    const TILE = 24;
+    const HUD_HEIGHT = 0;
+    const WALL = 0;
+    const EMPTY = 1;
+    const DOT = 2;
+    const POWER = 3;
 
-    // ─── Tile map  (21 cols × 23 rows) ───────────────────────────────────────
-    // Power pellets: [3][1], [3][19], [18][1], [18][19]
-    const MAP = [
-      /* 00 */ [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-      /* 01 */ [0,2,2,2,2,2,2,2,2,2,0,2,2,2,2,2,2,2,2,2,0],
-      /* 02 */ [0,2,0,0,2,0,0,0,2,0,0,0,2,0,0,0,2,0,0,2,0],
-      /* 03 */ [0,3,0,0,2,0,0,0,2,0,0,0,2,0,0,0,2,0,0,3,0],
-      /* 04 */ [0,2,0,0,2,2,2,2,2,2,2,2,2,2,2,2,2,0,0,2,0],
-      /* 05 */ [0,2,0,0,0,0,2,0,0,0,0,0,0,0,2,0,0,0,0,2,0],
-      /* 06 */ [0,2,2,2,2,2,2,0,0,0,0,0,0,0,2,2,2,2,2,2,0],
-      /* 07 */ [0,0,0,0,2,0,0,0,0,0,0,0,0,0,0,0,2,0,0,0,0],
-      /* 08 */ [0,0,0,0,2,0,0,0,0,0,0,0,0,0,0,0,2,0,0,0,0],
-      /* 09 */ [0,0,0,0,2,0,0,1,1,1,1,1,1,0,0,0,2,0,0,0,0],
-      /* 10 */ [0,0,0,0,2,0,0,1,0,0,1,0,1,0,0,0,2,0,0,0,0],
-      /* 11 */ [1,1,1,1,2,0,0,1,0,1,1,0,1,0,0,0,2,1,1,1,1],
-      /* 12 */ [0,0,0,0,2,0,0,1,0,0,0,0,1,0,0,0,2,0,0,0,0],
-      /* 13 */ [0,0,0,0,2,0,0,1,1,1,1,1,1,0,0,0,2,0,0,0,0],
-      /* 14 */ [0,0,0,0,2,0,0,0,0,0,0,0,0,0,0,0,2,0,0,0,0],
-      /* 15 */ [0,0,0,0,2,0,0,0,0,0,0,0,0,0,0,0,2,0,0,0,0],
-      /* 16 */ [0,2,2,2,2,2,2,2,2,2,0,2,2,2,2,2,2,2,2,2,0],
-      /* 17 */ [0,2,0,0,2,0,0,0,0,0,0,0,0,0,0,0,2,0,0,2,0],
-      /* 18 */ [0,3,2,0,2,2,2,2,2,2,0,2,2,2,2,2,2,0,2,3,0],
-      /* 19 */ [0,0,2,0,0,0,2,0,0,0,0,0,0,0,2,0,0,0,2,0,0],
-      /* 20 */ [0,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,0],
-      /* 21 */ [0,2,0,0,0,0,2,0,0,2,0,2,0,0,2,0,0,0,0,2,0],
-      /* 22 */ [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    const MAZE_TEMPLATE = [
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,3,2,2,2,2,2,2,2,2,0,2,2,2,2,2,2,2,2,3,0],
+      [0,2,0,0,2,0,0,0,2,0,0,0,2,0,0,0,2,0,0,2,0],
+      [0,2,0,0,2,0,0,0,2,0,0,0,2,0,0,0,2,0,0,2,0],
+      [0,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,0],
+      [0,2,0,0,2,0,2,0,0,0,0,0,0,0,2,0,2,0,0,2,0],
+      [0,2,2,2,2,0,2,2,2,0,2,0,2,2,2,0,2,2,2,2,0],
+      [0,0,0,0,2,0,0,0,2,0,2,0,2,0,0,0,2,0,0,0,0],
+      [0,0,0,0,2,0,2,2,2,2,2,2,2,2,2,0,2,0,0,0,0],
+      [0,0,0,0,2,0,2,0,0,1,1,1,0,0,2,0,2,0,0,0,0],
+      [0,0,0,0,2,0,2,0,1,1,1,1,1,0,2,0,2,0,0,0,0],
+      [1,1,1,1,2,2,2,0,1,0,1,0,1,0,2,2,2,1,1,1,1],
+      [0,0,0,0,2,0,2,0,1,1,1,1,1,0,2,0,2,0,0,0,0],
+      [0,0,0,0,2,0,2,0,0,0,1,0,0,0,2,0,2,0,0,0,0],
+      [0,0,0,0,2,0,2,2,2,2,1,2,2,2,2,0,2,0,0,0,0],
+      [0,0,0,0,2,0,0,0,2,0,0,0,2,0,0,0,2,0,0,0,0],
+      [0,3,2,2,2,2,2,2,2,2,0,2,2,2,2,2,2,2,2,3,0],
+      [0,2,0,0,2,0,0,0,0,2,0,2,0,0,0,0,2,0,0,2,0],
+      [0,2,2,0,2,2,2,2,0,2,2,2,0,2,2,2,2,0,2,2,0],
+      [0,0,2,0,0,0,2,2,0,0,0,0,0,2,2,0,0,0,2,0,0],
+      [0,2,2,2,2,2,2,2,2,2,0,2,2,2,2,2,2,2,2,2,0],
+      [0,2,0,0,0,0,2,0,0,2,2,2,0,0,2,0,0,0,0,2,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
     ];
 
-    const ROWS      = MAP.length;      // 23
-    const COLS      = MAP[0].length;   // 21
-    const TILE      = 20;              // px per tile
-    const HUD_H     = 44;              // px reserved for HUD at top
-
-    // ─── Game state ───────────────────────────────────────────────────────────
-    let score = 0;
-    let lives = 3;
-
-    // ─── Pac-Man entity state ─────────────────────────────────────────────────
-    // TUNNEL_ROW is the maze row that has side-to-side tunnel openings (row 11).
+    const ROWS = MAZE_TEMPLATE.length;
+    const COLS = MAZE_TEMPLATE[0].length;
     const TUNNEL_ROW = 11;
+    const canvas = document.getElementById('gameCanvas');
+    canvas.width = COLS * TILE;
+    canvas.height = ROWS * TILE;
+    const ctx = canvas.getContext('2d');
 
-    let pacman = {
-      col: 10,            // starting tile column (middle of bottom corridor)
-      row: 20,            // starting tile row
-      dir:  { dc: 0, dr: 0 },  // active direction vector (dc=Δcol, dr=Δrow)
-      next: { dc: 0, dr: 0 },  // queued direction from last key press
+    const hud = {
+      score: document.getElementById('scoreValue'),
+      lives: document.getElementById('livesValue'),
+      pellets: document.getElementById('pelletsValue'),
+      mode: document.getElementById('modeValue')
     };
 
-    // Count every pellet present in the map at game start.
-    let pelletsRemaining = 0;
-    for (let r = 0; r < ROWS; r++) {
-      for (let c = 0; c < COLS; c++) {
-        if (MAP[r][c] === DOT || MAP[r][c] === POWER) pelletsRemaining++;
+    const overlay = document.getElementById('overlay');
+    const overlayTitle = document.getElementById('overlayTitle');
+    const overlayMessage = document.getElementById('overlayMessage');
+    const overlayButton = document.getElementById('overlayButton');
+
+    const state = {
+      maze: [],
+      score: 0,
+      lives: 3,
+      pelletsRemaining: 0,
+      totalPellets: 0,
+      phaseIndex: 0,
+      phaseTimer: 0,
+      frightenedTimer: 0,
+      frightenedChain: 0,
+      roundFreeze: 0,
+      elapsed: 0,
+      state: 'ready',
+      modeLabel: 'Ready',
+      lastTime: 0,
+      accumulator: 0,
+      player: null,
+      ghosts: []
+    };
+
+    function cloneMaze() {
+      return MAZE_TEMPLATE.map(row => row.slice());
+    }
+
+    function createPlayer() {
+      return {
+        x: 10 * TILE + TILE / 2,
+        y: 17 * TILE + TILE / 2,
+        dir: { x: 0, y: 0 },
+        nextDir: { x: 0, y: 0 },
+        speed: 85,
+        radius: TILE * 0.42
+      };
+    }
+
+    function createGhosts() {
+      return [
+        createGhost('Blinky', '#ff4b5c', 10, 9,  { x: 1, y: 0 }, { col: COLS - 2, row: 1 }, 0,  'shadow'),
+        createGhost('Pinky',  '#ff9de1', 9,  11, { x: 0, y: -1 }, { col: 1, row: 1 },        3,  'speedy'),
+        createGhost('Inky',   '#49d7ff', 10, 11, { x: 0, y: -1 }, { col: COLS - 2, row: ROWS - 2 }, 6, 'bashful'),
+        createGhost('Clyde',  '#ffb347', 11, 11, { x: 0, y: -1 }, { col: 1, row: ROWS - 2 },        9, 'pokey')
+      ];
+    }
+
+    function createGhost(name, color, col, row, dir, scatterTarget, releaseDelay, personality) {
+      return {
+        name,
+        color,
+        personality,
+        x: col * TILE + TILE / 2,
+        y: row * TILE + TILE / 2,
+        dir: { ...dir },
+        speed: 74,
+        state: releaseDelay === 0 ? 'scatter' : 'pen',
+        releaseDelay,
+        home: { col, row },
+        scatterTarget,
+        frightened: false,
+        eaten: false,
+        targetOverride: null
+      };
+    }
+
+    function resetBoard() {
+      state.maze = cloneMaze();
+      state.totalPellets = countPellets(state.maze);
+      state.pelletsRemaining = state.totalPellets;
+      state.phaseIndex = 0;
+      state.phaseTimer = 0;
+      state.frightenedTimer = 0;
+      state.elapsed = 0;
+      state.frightenedChain = 0;
+      state.roundFreeze = 0.9;
+      state.player = createPlayer();
+      state.ghosts = createGhosts();
+      state.modeLabel = 'Ready';
+    }
+
+    function startNewGame() {
+      state.score = 0;
+      state.lives = 3;
+      state.state = 'playing';
+      resetBoard();
+      hideOverlay();
+      syncHud();
+    }
+
+    function restartRoundAfterHit() {
+      if (state.lives <= 0) {
+        finishGame('Game Over', 'The ghosts caught Pac-Man. Press restart to try again.', true);
+        return;
+      }
+      resetBoard();
+      state.state = 'playing';
+      hideOverlay();
+      syncHud();
+    }
+
+    function countPellets(maze) {
+      let total = 0;
+      for (const row of maze) {
+        for (const tile of row) {
+          if (tile === DOT || tile === POWER) total += 1;
+        }
+      }
+      return total;
+    }
+
+    function currentPhase() {
+      return GHOST_PHASES[state.phaseIndex];
+    }
+
+    function centerOf(col, row) {
+      return { x: col * TILE + TILE / 2, y: row * TILE + TILE / 2 };
+    }
+
+    function toTile(x, y) {
+      return { col: Math.floor(x / TILE), row: Math.floor(y / TILE) };
+    }
+
+    function normalizeDirection(dir) {
+      return { x: Math.sign(dir.x), y: Math.sign(dir.y) };
+    }
+
+    function isCentered(entity) {
+      const cx = (entity.x - TILE / 2) / TILE;
+      const cy = (entity.y - TILE / 2) / TILE;
+      return Math.abs(cx - Math.round(cx)) < 0.08 && Math.abs(cy - Math.round(cy)) < 0.08;
+    }
+
+    function alignedTile(entity) {
+      return {
+        col: Math.round((entity.x - TILE / 2) / TILE),
+        row: Math.round((entity.y - TILE / 2) / TILE)
+      };
+    }
+
+    function isWalkable(col, row) {
+      if (row === TUNNEL_ROW && (col < 0 || col >= COLS)) return true;
+      if (col < 0 || col >= COLS || row < 0 || row >= ROWS) return false;
+      return state.maze[row][col] !== WALL;
+    }
+
+    function wrapPosition(entity) {
+      if (Math.abs(entity.y - (TUNNEL_ROW * TILE + TILE / 2)) < 2) {
+        if (entity.x < -TILE / 2) entity.x = COLS * TILE + TILE / 2;
+        if (entity.x > COLS * TILE + TILE / 2) entity.x = -TILE / 2;
       }
     }
 
-    // ─── Ghost entities ───────────────────────────────────────────────────
-    const DOOR_ROW = 9;   // row just above pen where ghosts exit
-    const DOOR_COL = 10;  // centre column of the pen door
+    function canMove(entity, dir) {
+      if (!dir.x && !dir.y) return false;
+      const tile = alignedTile(entity);
+      const nextCol = tile.col + dir.x;
+      const nextRow = tile.row + dir.y;
+      return isWalkable(nextCol, nextRow);
+    }
 
-    // Ghost starting positions (inside or just-above the pen)
-    const ghosts = [
-      { name:'Blinky', color:'#ff0000', col:10, row:9,  dir:{dc:0,dr:0}, mode:'scatter', releaseTime:0,
-        scatterTarget:{col:COLS-2, row:1} },
-      { name:'Pinky',  color:'#ffb8ff', col:10, row:11, dir:{dc:0,dr:0}, mode:'pen',     releaseTime:3,
-        scatterTarget:{col:1, row:1} },
-      { name:'Inky',   color:'#00ffff', col:9,  row:11, dir:{dc:0,dr:0}, mode:'pen',     releaseTime:6,
-        scatterTarget:{col:COLS-2, row:ROWS-2} },
-      { name:'Clyde',  color:'#ffb852', col:10, row:13, dir:{dc:0,dr:0}, mode:'pen',     releaseTime:9,
-        scatterTarget:{col:1, row:ROWS-2} },
+    function advanceEntity(entity, seconds) {
+      entity.x += entity.dir.x * entity.speed * seconds;
+      entity.y += entity.dir.y * entity.speed * seconds;
+      wrapPosition(entity);
+    }
+
+    function showOverlay(title, message, buttonLabel) {
+      overlayTitle.textContent = title;
+      overlayMessage.textContent = message;
+      overlayButton.textContent = buttonLabel;
+      overlay.classList.add('visible');
+    }
+
+    function hideOverlay() {
+      overlay.classList.remove('visible');
+    }
+
+    function finishGame(title, message, lost) {
+      state.state = lost ? 'gameover' : 'victory';
+      state.modeLabel = lost ? 'Defeat' : 'Victory';
+      showOverlay(title, message, 'Restart');
+      syncHud();
+    }
+
+    function syncHud() {
+      hud.score.textContent = String(state.score);
+      hud.lives.textContent = String(state.lives);
+      hud.pellets.textContent = `${state.pelletsRemaining}/${state.totalPellets}`;
+      hud.mode.textContent = state.modeLabel;
+    }
+
+    function distance(a, b) {
+      return Math.hypot(a.x - b.x, a.y - b.y);
+    }
+
+    function reverseDir(dir) {
+      return { x: -dir.x, y: -dir.y };
+    }
+
+    function sameDir(a, b) {
+      return a.x === b.x && a.y === b.y;
+    }
+
+    function clampTile(col, row) {
+      return {
+        col: Math.max(0, Math.min(COLS - 1, col)),
+        row: Math.max(0, Math.min(ROWS - 1, row))
+      };
+    }
+
+    function playerTileAhead(steps) {
+      const playerTile = alignedTile(state.player);
+      return clampTile(
+        playerTile.col + state.player.dir.x * steps,
+        playerTile.row + state.player.dir.y * steps
+      );
+    }
+
+    const GHOST_PHASES = [
+      { mode: 'scatter', duration: 7 },
+      { mode: 'chase', duration: 20 },
+      { mode: 'scatter', duration: 7 },
+      { mode: 'chase', duration: 20 }
     ];
 
-    // Elapsed game seconds (updated in gameLoop)
-    let gameElapsed = 0;
-
-    // ─── Ghost mode cycle state ───────────────────────────────────────────────
-    // Phases alternate: scatter(7s) → chase(20s) → scatter(7s) → ...
-    const MODE_PHASES = [
-      { mode: 'scatter', duration: 7  },
-      { mode: 'chase',   duration: 20 },
-    ];
-    let modeCycleIndex   = 0;   // index into MODE_PHASES (cycles 0→1→0→1…)
-    let modePhaseStart   = 0;   // gameElapsed value when current phase began
-    let modeReversed     = false; // did we already reverse in this phase?
-
-    // ─── Canvas setup ─────────────────────────────────────────────────────────
-    const canvas = document.getElementById('gameCanvas');
-    canvas.width  = COLS * TILE;
-    canvas.height = ROWS * TILE + HUD_H;
-    const ctx = canvas.getContext('2d');
-
-    // SCAFFOLD — draw functions follow in next pass
-    // ─── Draw helpers ─────────────────────────────────────────────────────────
-
-    function drawHUD() {
-      // Background bar
-      ctx.fillStyle = '#000';
-      ctx.fillRect(0, 0, canvas.width, HUD_H);
-
-      // Score
-      ctx.fillStyle = '#fff';
-      ctx.font = 'bold 14px monospace';
-      ctx.textBaseline = 'middle';
-      ctx.textAlign = 'left';
-      ctx.fillText('SCORE', 10, HUD_H * 0.30);
-      ctx.fillStyle = '#ffff00';
-      ctx.font = 'bold 18px monospace';
-      ctx.fillText(String(score).padStart(5, '0'), 10, HUD_H * 0.72);
-
-      // Lives (heart symbols)
-      ctx.fillStyle = '#fff';
-      ctx.font = 'bold 14px monospace';
-      ctx.textAlign = 'right';
-      ctx.fillText('LIVES', canvas.width - 10, HUD_H * 0.30);
-      ctx.fillStyle = '#ff4444';
-      ctx.font = '18px monospace';
-      const hearts = '♥ '.repeat(lives).trim();
-      ctx.fillText(hearts, canvas.width - 10, HUD_H * 0.72);
-
-      // Divider line
-      ctx.strokeStyle = '#1a1aff';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(0, HUD_H - 1);
-      ctx.lineTo(canvas.width, HUD_H - 1);
-      ctx.stroke();
+    function tryTurnPlayer() {
+      const player = state.player;
+      if (!isCentered(player)) return;
+      if (canMove(player, player.nextDir)) {
+        player.dir = { ...normalizeDirection(player.nextDir) };
+      } else if (!canMove(player, player.dir)) {
+        player.dir = { x: 0, y: 0 };
+      }
     }
 
-    function drawWall(col, row) {
-      const x = col * TILE;
-      const y = HUD_H + row * TILE;
-      ctx.fillStyle = '#0000cc';
-      ctx.fillRect(x, y, TILE, TILE);
-      // Inner highlight to give a 3-D panel feel
-      ctx.strokeStyle = '#3333ff';
-      ctx.lineWidth = 1;
-      ctx.strokeRect(x + 1.5, y + 1.5, TILE - 3, TILE - 3);
+    function consumeTileUnderPlayer() {
+      const tile = alignedTile(state.player);
+      const mazeTile = state.maze[tile.row]?.[tile.col];
+      if (mazeTile === DOT) {
+        state.maze[tile.row][tile.col] = EMPTY;
+        state.score += 10;
+        state.pelletsRemaining -= 1;
+      } else if (mazeTile === POWER) {
+        state.maze[tile.row][tile.col] = EMPTY;
+        state.score += 50;
+        state.pelletsRemaining -= 1;
+        state.frightenedTimer = 8;
+        state.frightenedChain = 0;
+        for (const ghost of state.ghosts) {
+          if (ghost.state === 'chase' || ghost.state === 'scatter') {
+            ghost.state = 'frightened';
+            ghost.frightened = true;
+            ghost.dir = reverseDir(ghost.dir);
+          }
+        }
+      }
+
+      if (state.pelletsRemaining <= 0) {
+        finishGame('Victory!', 'Every pellet has been cleared. Press restart to play again.', false);
+      }
     }
 
-    function drawPellet(col, row) {
-      const cx = col * TILE + TILE / 2;
-      const cy = HUD_H + row * TILE + TILE / 2;
-      ctx.fillStyle = '#ffddaa';
-      ctx.beginPath();
-      ctx.arc(cx, cy, 3, 0, Math.PI * 2);
-      ctx.fill();
+    function updateModeTimers(seconds) {
+      if (state.state !== 'playing') return;
+      if (state.roundFreeze > 0) {
+        state.roundFreeze = Math.max(0, state.roundFreeze - seconds);
+        state.modeLabel = 'Ready';
+        return;
+      }
+
+      state.elapsed += seconds;
+
+      if (state.frightenedTimer > 0) {
+        state.frightenedTimer = Math.max(0, state.frightenedTimer - seconds);
+        state.modeLabel = `Frightened ${state.frightenedTimer.toFixed(1)}s`;
+        if (state.frightenedTimer === 0) {
+          state.frightenedChain = 0;
+          for (const ghost of state.ghosts) {
+            if (ghost.state === 'frightened') {
+              ghost.frightened = false;
+              ghost.state = currentPhase().mode;
+            }
+          }
+        }
+        return;
+      }
+
+      state.phaseTimer += seconds;
+      const phase = currentPhase();
+      state.modeLabel = phase.mode[0].toUpperCase() + phase.mode.slice(1);
+      if (state.phaseTimer >= phase.duration) {
+        state.phaseTimer = 0;
+        state.phaseIndex = (state.phaseIndex + 1) % GHOST_PHASES.length;
+        for (const ghost of state.ghosts) {
+          if (ghost.state === 'scatter' || ghost.state === 'chase') {
+            ghost.state = currentPhase().mode;
+            ghost.dir = reverseDir(ghost.dir);
+          }
+        }
+      }
     }
 
-    function drawPowerPellet(col, row) {
-      const cx = col * TILE + TILE / 2;
-      const cy = HUD_H + row * TILE + TILE / 2;
-      // Outer glow
-      const grad = ctx.createRadialGradient(cx, cy, 1, cx, cy, 8);
-      grad.addColorStop(0, '#ffffff');
-      grad.addColorStop(0.5, '#ffff44');
-      grad.addColorStop(1, 'transparent');
-      ctx.fillStyle = grad;
-      ctx.beginPath();
-      ctx.arc(cx, cy, 8, 0, Math.PI * 2);
-      ctx.fill();
-      // Core
-      ctx.fillStyle = '#ffff00';
-      ctx.beginPath();
-      ctx.arc(cx, cy, 6, 0, Math.PI * 2);
-      ctx.fill();
+    function getGhostTarget(ghost) {
+      const playerTile = alignedTile(state.player);
+      if (ghost.state === 'frightened') {
+        return ghost.scatterTarget;
+      }
+      if (ghost.eaten) {
+        return ghost.home;
+      }
+      if (ghost.state === 'scatter') {
+        return ghost.scatterTarget;
+      }
+
+      switch (ghost.name) {
+        case 'Blinky':
+          return playerTile;
+        case 'Pinky':
+          return playerTileAhead(4);
+        case 'Inky': {
+          const pivot = playerTileAhead(2);
+          const blinkyTile = alignedTile(state.ghosts[0]);
+          return clampTile(
+            pivot.col + (pivot.col - blinkyTile.col),
+            pivot.row + (pivot.row - blinkyTile.row)
+          );
+        }
+        case 'Clyde': {
+          const ghostTile = alignedTile(ghost);
+          const dist = Math.hypot(ghostTile.col - playerTile.col, ghostTile.row - playerTile.row);
+          return dist > 8 ? playerTile : ghost.scatterTarget;
+        }
+        default:
+          return playerTile;
+      }
     }
 
-    function drawTunnel(col, row) {
-      // Tunnel cells (EMPTY on edge rows) are just dark passage openings
-      const x = col * TILE;
-      const y = HUD_H + row * TILE;
-      ctx.fillStyle = '#111';
-      ctx.fillRect(x, y, TILE, TILE);
+    function chooseGhostDirection(ghost) {
+      if (!isCentered(ghost)) return;
+      const tile = alignedTile(ghost);
+      const target = getGhostTarget(ghost);
+      const choices = [
+        { x: 0, y: -1 },
+        { x: -1, y: 0 },
+        { x: 0, y: 1 },
+        { x: 1, y: 0 }
+      ].filter(dir => {
+        if (!isWalkable(tile.col + dir.x, tile.row + dir.y)) return false;
+        if (!ghost.eaten && !sameDir(dir, reverseDir(ghost.dir))) return true;
+        return false;
+      });
+
+      const fallback = [
+        { x: 0, y: -1 },
+        { x: -1, y: 0 },
+        { x: 0, y: 1 },
+        { x: 1, y: 0 }
+      ].filter(dir => isWalkable(tile.col + dir.x, tile.row + dir.y));
+
+      const candidates = choices.length ? choices : fallback;
+      if (!candidates.length) {
+        ghost.dir = reverseDir(ghost.dir);
+        return;
+      }
+
+      if (ghost.state === 'frightened' && !ghost.eaten) {
+        candidates.sort((a, b) => Math.random() - 0.5);
+        ghost.dir = candidates[0];
+        return;
+      }
+
+      let best = candidates[0];
+      let bestDistance = Infinity;
+      for (const dir of candidates) {
+        const next = clampTile(tile.col + dir.x, tile.row + dir.y);
+        const dist = Math.hypot(target.col - next.col, target.row - next.row);
+        if (dist < bestDistance) {
+          bestDistance = dist;
+          best = dir;
+        }
+      }
+      ghost.dir = best;
+    }
+
+    function updateGhost(ghost, seconds) {
+      if (ghost.state === 'pen') {
+        ghost.dir = { x: 0, y: 0 };
+        if (state.elapsed >= ghost.releaseDelay) {
+          ghost.state = state.frightenedTimer > 0 ? 'frightened' : currentPhase().mode;
+          ghost.frightened = ghost.state === 'frightened';
+        }
+        return;
+      }
+
+      chooseGhostDirection(ghost);
+      advanceEntity(ghost, seconds);
+
+      if (ghost.eaten && distance(ghost, centerOf(ghost.home.col, ghost.home.row)) < 8) {
+        ghost.eaten = false;
+        ghost.frightened = false;
+        ghost.state = state.frightenedTimer > 0 ? 'frightened' : currentPhase().mode;
+      }
+    }
+
+    function handleCollisions() {
+      for (const ghost of state.ghosts) {
+        if (distance(state.player, ghost) >= TILE * 0.65) continue;
+
+        if ((ghost.state === 'frightened' || ghost.frightened) && !ghost.eaten) {
+          const ghostEatScore = 200 * Math.pow(2, state.frightenedChain);
+          state.score += ghostEatScore;
+          state.frightenedChain = Math.min(state.frightenedChain + 1, 3);
+          ghost.eaten = true;
+          ghost.frightened = false;
+          ghost.state = 'eaten';
+          ghost.speed = 110;
+          continue;
+        }
+
+        if (!ghost.eaten && ghost.state !== 'pen') {
+          state.lives -= 1;
+          if (state.lives <= 0) {
+            finishGame('Game Over', 'The ghosts caught Pac-Man. Press restart to jump back in.', true);
+          } else {
+            restartRoundAfterHit();
+          }
+          return;
+        }
+      }
+    }
+
+    function update(seconds) {
+      if (state.state !== 'playing') return;
+      updateModeTimers(seconds);
+      if (state.roundFreeze > 0) {
+        syncHud();
+        return;
+      }
+
+      tryTurnPlayer();
+      if (canMove(state.player, state.player.dir) || !isCentered(state.player)) {
+        advanceEntity(state.player, seconds);
+      }
+      if (isCentered(state.player)) consumeTileUnderPlayer();
+
+      for (const ghost of state.ghosts) {
+        ghost.speed = ghost.eaten ? 110 : (ghost.state === 'frightened' ? 52 : 74);
+        updateGhost(ghost, seconds);
+      }
+
+      handleCollisions();
+      syncHud();
     }
 
     function drawMaze() {
-      // Clear play field
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.fillStyle = '#000';
-      ctx.fillRect(0, HUD_H, canvas.width, ROWS * TILE);
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-      for (let r = 0; r < ROWS; r++) {
-        for (let c = 0; c < COLS; c++) {
-          const tile = MAP[r][c];
-          if (tile === WALL)  { drawWall(c, r); }
-          else if (tile === DOT)   { drawPellet(c, r); }
-          else if (tile === POWER) { drawPowerPellet(c, r); }
-          else if (tile === EMPTY) {
-            // Edge tunnel openings get a subtle treatment
-            if (c === 0 || c === COLS - 1) { drawTunnel(c, r); }
-            // else: just black (already cleared)
+      for (let row = 0; row < ROWS; row += 1) {
+        for (let col = 0; col < COLS; col += 1) {
+          const x = col * TILE;
+          const y = row * TILE + HUD_HEIGHT;
+          const tile = state.maze[row][col];
+
+          if (tile === WALL) {
+            ctx.fillStyle = '#1026ad';
+            ctx.fillRect(x, y, TILE, TILE);
+            ctx.strokeStyle = '#4c71ff';
+            ctx.lineWidth = 1.5;
+            ctx.strokeRect(x + 1, y + 1, TILE - 2, TILE - 2);
+            continue;
+          }
+
+          if (tile === DOT) {
+            ctx.fillStyle = '#ffd8a8';
+            ctx.beginPath();
+            ctx.arc(x + TILE / 2, y + TILE / 2, 3, 0, Math.PI * 2);
+            ctx.fill();
+            continue;
+          }
+
+          if (tile === POWER) {
+            ctx.fillStyle = '#fff17d';
+            ctx.beginPath();
+            ctx.arc(x + TILE / 2, y + TILE / 2, 7, 0, Math.PI * 2);
+            ctx.fill();
           }
         }
+      }
+    }
+
+    function drawPacman() {
+      const player = state.player;
+      const facing = player.dir.x === 1 ? 0 : player.dir.x === -1 ? Math.PI : player.dir.y === -1 ? Math.PI * 1.5 : Math.PI * 0.5;
+      const mouth = 0.22 * Math.PI + Math.sin(performance.now() / 90) * 0.05;
+      ctx.fillStyle = '#ffe600';
+      ctx.beginPath();
+      ctx.moveTo(player.x, player.y + HUD_HEIGHT);
+      ctx.arc(player.x, player.y + HUD_HEIGHT, player.radius, facing + mouth, facing - mouth, false);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    function drawGhost(ghost) {
+      const bodyColor = ghost.state === 'frightened' && !ghost.eaten
+        ? (state.frightenedTimer < 2.5 && Math.floor(performance.now() / 120) % 2 === 0 ? '#ffffff' : '#295bff')
+        : ghost.eaten
+          ? '#15204a'
+          : ghost.color;
+
+      const x = ghost.x;
+      const y = ghost.y + HUD_HEIGHT;
+      const radius = TILE * 0.42;
+
+      ctx.fillStyle = bodyColor;
+      ctx.beginPath();
+      ctx.arc(x, y - 2, radius, Math.PI, 0);
+      ctx.lineTo(x + radius, y + radius - 4);
+      for (let i = 0; i < 4; i += 1) {
+        const step = radius * 0.5;
+        ctx.quadraticCurveTo(x + radius - step * (i + 0.5), y + radius + 4, x + radius - step * (i + 1), y + radius - 4);
+      }
+      ctx.closePath();
+      ctx.fill();
+
+      const eyeOffsetX = radius * 0.38;
+      const eyeY = y - 4;
+      const pupilOffsetX = ghost.dir.x * 2;
+      const pupilOffsetY = ghost.dir.y * 2;
+      for (const side of [-1, 1]) {
+        const eyeX = x + eyeOffsetX * side;
+        ctx.fillStyle = '#fff';
+        ctx.beginPath();
+        ctx.arc(eyeX, eyeY, 4.2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#0921a8';
+        ctx.beginPath();
+        ctx.arc(eyeX + pupilOffsetX, eyeY + pupilOffsetY, 2.1, 0, Math.PI * 2);
+        ctx.fill();
       }
     }
 
     function render() {
-      drawHUD();
       drawMaze();
+      for (const ghost of state.ghosts) drawGhost(ghost);
+      drawPacman();
     }
 
-    // ─── Input handling ─────────────────────────────────────────────────────
-    const ARROW_DIR = {
-      ArrowLeft:  { dc: -1, dr:  0 },
-      ArrowRight: { dc:  1, dr:  0 },
-      ArrowUp:    { dc:  0, dr: -1 },
-      ArrowDown:  { dc:  0, dr:  1 },
-    };
+    function loop(timestamp) {
+      if (!state.lastTime) state.lastTime = timestamp;
+      const delta = Math.min((timestamp - state.lastTime) / 1000, 0.05);
+      state.lastTime = timestamp;
+      state.accumulator += delta;
 
-    document.addEventListener('keydown', e => {
-      if (ARROW_DIR[e.key]) {
-        e.preventDefault();
-        pacman.next = ARROW_DIR[e.key];
+      while (state.accumulator >= 1 / 60) {
+        update(1 / 60);
+        state.accumulator -= 1 / 60;
+      }
+
+      render();
+      requestAnimationFrame(loop);
+    }
+
+    document.addEventListener('keydown', event => {
+      const keyMap = {
+        ArrowLeft: { x: -1, y: 0 },
+        ArrowRight: { x: 1, y: 0 },
+        ArrowUp: { x: 0, y: -1 },
+        ArrowDown: { x: 0, y: 1 }
+      };
+
+      if (keyMap[event.key]) {
+        event.preventDefault();
+        state.player.nextDir = keyMap[event.key];
+        if (state.state === 'ready') startNewGame();
+        return;
+      }
+
+      if ((event.key === 'Enter' || event.key === ' ') && (state.state === 'gameover' || state.state === 'victory' || state.state === 'ready')) {
+        event.preventDefault();
+        startNewGame();
       }
     });
 
-    // ─── Wall & tunnel helpers ─────────────────────────────────────────────────
-    // Returns true when the cell at (col, row) is impassable.
-    // Cells just outside the left/right edge of the tunnel row are open so
-    // Pac-Man can step through before the wrap snaps the coordinate.
-    function isWall(col, row) {
-      if (row === TUNNEL_ROW && (col < 0 || col >= COLS)) return false;
-      if (col < 0 || col >= COLS || row < 0 || row >= ROWS) return true;
-      return MAP[row][col] === WALL;
-    }
+    overlayButton.addEventListener('click', () => startNewGame());
 
-    // Wraps col back into bounds when Pac-Man exits the tunnel on row 11.
-    function wrapTunnel(col, row) {
-      if (row === TUNNEL_ROW) {
-        if (col < 0)     return { col: COLS - 1, row };
-        if (col >= COLS) return { col: 0, row };
-      }
-      return { col, row };
-    }
-
-    // ─── Pellet consumption ────────────────────────────────────────────────────
-    function consumePellet(col, row) {
-      const tile = MAP[row][col];
-      if (tile === DOT) {
-        MAP[row][col] = EMPTY;
-        score += 10;
-        pelletsRemaining--;
-      } else if (tile === POWER) {
-        MAP[row][col] = EMPTY;
-        score += 50;
-        pelletsRemaining--;
-      }
-    }
-
-    // ─── Pac-Man movement tick ────────────────────────────────────────────────
-    // Called once per movement tick.  Tries the queued direction first;
-    // if that is blocked it falls back to the current direction.
-    function updatePacman() {
-      // Promote queued direction when it does not point into a wall.
-      const { dc: ndc, dr: ndr } = pacman.next;
-      if (ndc !== 0 || ndr !== 0) {
-        const wn = wrapTunnel(pacman.col + ndc, pacman.row + ndr);
-        if (!isWall(wn.col, wn.row)) {
-          pacman.dir = { dc: ndc, dr: ndr };
-        }
-      }
-
-      // Apply current direction.
-      const { dc, dr } = pacman.dir;
-      if (dc === 0 && dr === 0) return; // waiting for first key press
-
-      const dest = wrapTunnel(pacman.col + dc, pacman.row + dr);
-      if (!isWall(dest.col, dest.row)) {
-        pacman.col = dest.col;
-        pacman.row = dest.row;
-        consumePellet(pacman.col, pacman.row);
-      }
-    }
-
-    // ─── Ghost movement ───────────────────────────────────────────────────
-    // Ghosts in the pen are allowed to walk on pen-interior tiles
-    // even though isWall() would block them for Pac-Man.
-    function isGhostWall(col, row, ghost) {
-      // Tunnel row edge exception (same as isWall)
-      if (row === TUNNEL_ROW && (col < 0 || col >= COLS)) return false;
-      if (col < 0 || col >= COLS || row < 0 || row >= ROWS) return true;
-      return MAP[row][col] === WALL;
-    }
-
-    function euclidean(c1, r1, c2, r2) {
-      return Math.sqrt((c1 - c2) ** 2 + (r1 - r2) ** 2);
-    }
-
-    // Returns true if (dc2,dr2) is the exact reverse of (dc1,dr1).
-    function isReverse(dc1, dr1, dc2, dr2) {
-      return dc1 === -dc2 && dr1 === -dr2;
-    }
-
-    const DIRS = [
-      { dc: 0, dr:-1 }, // up
-      { dc:-1, dr: 0 }, // left
-      { dc: 0, dr: 1 }, // down
-      { dc: 1, dr: 0 }, // right
-    ];
-
-    // Standard ghost AI move: pick the exit from the current tile that
-    // minimises Euclidean distance to the target tile.  No reversals.
-    function ghostAIMove(ghost, targetCol, targetRow) {
-      let bestDir = null;
-      let bestDist = Infinity;
-
-      for (const d of DIRS) {
-        // No reversals
-        if (isReverse(ghost.dir.dc, ghost.dir.dr, d.dc, d.dr)) continue;
-
-        const nc = ghost.col + d.dc;
-        const nr = ghost.row + d.dr;
-        const w = wrapTunnel(nc, nr);
-
-        if (isGhostWall(w.col, w.row, ghost)) continue;
-
-        const dist = euclidean(w.col, w.row, targetCol, targetRow);
-        if (dist < bestDist) {
-          bestDist = dist;
-          bestDir = d;
-        }
-      }
-
-      // If no forward exit (dead end), allow reversal as fallback
-      if (!bestDir) {
-        for (const d of DIRS) {
-          const nc = ghost.col + d.dc;
-          const nr = ghost.row + d.dr;
-          const w = wrapTunnel(nc, nr);
-          if (!isGhostWall(w.col, w.row, ghost)) {
-            bestDir = d;
-            break;
-          }
-        }
-      }
-
-      if (bestDir) {
-        ghost.dir = { dc: bestDir.dc, dr: bestDir.dr };
-        const dest = wrapTunnel(ghost.col + bestDir.dc, ghost.row + bestDir.dr);
-        ghost.col = dest.col;
-        ghost.row = dest.row;
-      }
-    }
-
-    // Corridor entry points just outside the pen that connect to the main maze.
-    // Col 4 and col 16 are the two vertical corridors flanking the pen.
-    const PEN_EXIT_COL = 4;
-    const PEN_EXIT_ROW = 9;
-
-    // Move a ghost that is exiting the pen: head to the door then
-    // teleport to the nearest corridor entry and start scattering.
-    function ghostExitPen(ghost) {
-      // Step 1: align column to DOOR_COL inside the pen
-      if (ghost.col < DOOR_COL) {
-        ghost.dir = { dc: 1, dr: 0 };
-        ghost.col++;
-        return;
-      } else if (ghost.col > DOOR_COL) {
-        ghost.dir = { dc:-1, dr: 0 };
-        ghost.col--;
-        return;
-      }
-      // Step 2: move up toward DOOR_ROW
-      if (ghost.row > DOOR_ROW) {
-        ghost.dir = { dc: 0, dr:-1 };
-        ghost.row--;
-        return;
-      }
-      // Arrived at door — warp to corridor entry and start scattering.
-      ghost.col = PEN_EXIT_COL;
-      ghost.row = PEN_EXIT_ROW;
-      ghost.mode = 'scatter';
-      ghost.dir = { dc: 0, dr:-1 }; // initial scatter direction: up
-    }
-
-    // ─── Chase target helpers ─────────────────────────────────────────────────
-
-    // Clamp a tile coordinate to valid maze bounds.
-    function clampTile(col, row) {
-      return {
-        col: Math.max(0, Math.min(COLS - 1, col)),
-        row: Math.max(0, Math.min(ROWS - 1, row)),
-      };
-    }
-
-    // Returns N tiles ahead of Pac-Man in his current direction.
-    function tilesAheadOfPacman(n) {
-      return clampTile(
-        pacman.col + pacman.dir.dc * n,
-        pacman.row + pacman.dir.dr * n
-      );
-    }
-
-    // Compute the chase target tile for a given ghost.
-    function getChaseTarget(ghost) {
-      switch (ghost.name) {
-        case 'Blinky': {
-          // Target Pac-Man's current tile directly.
-          return { col: pacman.col, row: pacman.row };
-        }
-        case 'Pinky': {
-          // Target 4 tiles ahead of Pac-Man.
-          return tilesAheadOfPacman(4);
-        }
-        case 'Inky': {
-          // Pivot = 2 tiles ahead of Pac-Man.
-          // Blinky = ghosts[0]
-          const pivot  = tilesAheadOfPacman(2);
-          const blinky = ghosts[0];
-          return clampTile(
-            pivot.col + (pivot.col - blinky.col),
-            pivot.row + (pivot.row - blinky.row)
-          );
-        }
-        case 'Clyde': {
-          // Chase Pac-Man when farther than 8 tiles; otherwise retreat to scatter corner.
-          const dist = euclidean(ghost.col, ghost.row, pacman.col, pacman.row);
-          if (dist > 8) return { col: pacman.col, row: pacman.row };
-          return ghost.scatterTarget;
-        }
-        default:
-          return ghost.scatterTarget;
-      }
-    }
-
-    // ─── Ghost mode cycle management ─────────────────────────────────────────
-
-    // Reverse every active (non-pen, non-exiting) ghost once.
-    function reverseActiveGhosts() {
-      for (const g of ghosts) {
-        if (g.mode !== 'pen' && g.mode !== 'exiting') {
-          g.dir = { dc: -g.dir.dc, dr: -g.dir.dr };
-        }
-      }
-    }
-
-    function updateGhostModeCycle() {
-      const currentPhase = MODE_PHASES[modeCycleIndex];
-      const elapsed      = gameElapsed - modePhaseStart;
-
-      if (elapsed >= currentPhase.duration) {
-        // Advance to the next phase (wrap around between 0 and 1).
-        modeCycleIndex = (modeCycleIndex + 1) % MODE_PHASES.length;
-        modePhaseStart = gameElapsed;
-        modeReversed   = false;
-
-        // Update all active ghosts to the new mode.
-        const newMode = MODE_PHASES[modeCycleIndex].mode;
-        for (const g of ghosts) {
-          if (g.mode !== 'pen' && g.mode !== 'exiting') {
-            g.mode = newMode;
-          }
-        }
-      }
-
-      // Reverse direction exactly once at the start of the new phase.
-      if (!modeReversed) {
-        reverseActiveGhosts();
-        modeReversed = true;
-      }
-    }
-
-    function updateGhosts() {
-      // Drive the global scatter/chase cycle (only once ghosts are out).
-      const anyActive = ghosts.some(g => g.mode === 'scatter' || g.mode === 'chase');
-      if (anyActive) updateGhostModeCycle();
-
-      for (const g of ghosts) {
-        if (g.mode === 'pen') {
-          if (gameElapsed >= g.releaseTime) {
-            g.mode = 'exiting';
-          }
-          continue; // stay put while in pen
-        }
-
-        if (g.mode === 'exiting') {
-          ghostExitPen(g);
-          // When the ghost exits it enters 'scatter'; sync its mode with the
-          // current global phase so it doesn't lag behind.
-          if (g.mode === 'scatter') {
-            g.mode = MODE_PHASES[modeCycleIndex].mode;
-          }
-          continue;
-        }
-
-        if (g.mode === 'scatter') {
-          ghostAIMove(g, g.scatterTarget.col, g.scatterTarget.row);
-        } else if (g.mode === 'chase') {
-          const target = getChaseTarget(g);
-          ghostAIMove(g, target.col, target.row);
-        }
-      }
-    }
-
-    // ─── Draw Pac-Man ─────────────────────────────────────────────────────────
-    function drawPacman() {
-      const cx = pacman.col * TILE + TILE / 2;
-      const cy = HUD_H + pacman.row * TILE + TILE / 2;
-      const pr = TILE / 2 - 2;
-      const mouth = 0.22 * Math.PI; // half-angle of open mouth
-
-      // Arc start/end depend on facing direction (angle 0 = right, clockwise).
-      let start, end;
-      const { dc, dr } = pacman.dir;
-      if      (dc ===  1 && dr ===  0) { start = mouth;                  end = 2 * Math.PI - mouth; }
-      else if (dc === -1 && dr ===  0) { start = Math.PI + mouth;        end = Math.PI - mouth; }
-      else if (dc ===  0 && dr === -1) { start = 1.5 * Math.PI + mouth;  end = 1.5 * Math.PI - mouth; }
-      else if (dc ===  0 && dr ===  1) { start = 0.5 * Math.PI + mouth;  end = 0.5 * Math.PI - mouth; }
-      else                             { start = mouth;                  end = 2 * Math.PI - mouth; }
-
-      ctx.fillStyle = '#ffff00';
-      ctx.beginPath();
-      ctx.moveTo(cx, cy);
-      ctx.arc(cx, cy, pr, start, end);
-      ctx.closePath();
-      ctx.fill();
-    }
-
-    // ─── Draw Ghosts ─────────────────────────────────────────────────────
-    function drawGhost(ghost) {
-      const cx = ghost.col * TILE + TILE / 2;
-      const cy = HUD_H + ghost.row * TILE + TILE / 2;
-      const r = TILE / 2 - 1;
-
-      // Body: rounded top, wavy bottom
-      ctx.fillStyle = ghost.color;
-      ctx.beginPath();
-      ctx.arc(cx, cy - 2, r, Math.PI, 0, false); // dome
-      ctx.lineTo(cx + r, cy + r - 2);
-      // Wavy skirt (3 bumps)
-      const skirtY = cy + r - 2;
-      const bumpW = (2 * r) / 3;
-      for (let i = 0; i < 3; i++) {
-        const bx = cx + r - i * bumpW;
-        ctx.quadraticCurveTo(bx - bumpW * 0.25, skirtY + 4, bx - bumpW * 0.5, skirtY);
-        ctx.quadraticCurveTo(bx - bumpW * 0.75, skirtY - 3, bx - bumpW, skirtY);
-      }
-      ctx.closePath();
-      ctx.fill();
-
-      // Eyes
-      const eyeOffX = r * 0.30;
-      const eyeR = r * 0.28;
-      const pupilR = eyeR * 0.50;
-
-      // Pupil offset based on direction
-      let pdx = 0, pdy = 0;
-      if (ghost.dir.dc === -1) pdx = -pupilR * 0.7;
-      if (ghost.dir.dc ===  1) pdx =  pupilR * 0.7;
-      if (ghost.dir.dr === -1) pdy = -pupilR * 0.7;
-      if (ghost.dir.dr ===  1) pdy =  pupilR * 0.7;
-
-      for (const side of [-1, 1]) {
-        const ex = cx + side * eyeOffX;
-        const ey = cy - 3;
-        // Sclera (white)
-        ctx.fillStyle = '#fff';
-        ctx.beginPath();
-        ctx.arc(ex, ey, eyeR, 0, Math.PI * 2);
-        ctx.fill();
-        // Pupil (blue)
-        ctx.fillStyle = '#00f';
-        ctx.beginPath();
-        ctx.arc(ex + pdx, ey + pdy, pupilR, 0, Math.PI * 2);
-        ctx.fill();
-      }
-    }
-
-    function drawGhosts() {
-      for (const g of ghosts) drawGhost(g);
-    }
-
-    // ─── Game loop ────────────────────────────────────────────────────────────
-    const TICK_MS = 175; // ms between movement steps
-    let lastTick  = 0;
-    let gameStartTime = 0;
-
-    function gameLoop(ts) {
-      if (gameStartTime === 0) gameStartTime = ts;
-      gameElapsed = (ts - gameStartTime) / 1000;
-
-      if (ts - lastTick >= TICK_MS) {
-        lastTick = ts;
-        updatePacman();
-        updateGhosts();
-      }
-      drawHUD();
-      drawMaze();
-      drawGhosts();   // after maze, before HUD overlay pass
-      drawPacman();
-      requestAnimationFrame(gameLoop);
-    }
-
-    // ─── Start ────────────────────────────────────────────────────────────────
-    requestAnimationFrame(gameLoop);
+    resetBoard();
+    syncHud();
+    requestAnimationFrame(loop);
   </script>
 </body>
 </html>
